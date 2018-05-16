@@ -1,0 +1,121 @@
+﻿# Note, not an exact script, but lines of code which could be run to clean up collection eval times.
+# Leaving the script file here for later reference
+# 16/05/2018
+
+Write-Error "Do not run this script in totality" -EA Stop
+
+# Site configuration
+$SiteCode = "SC1" # Site code 
+$ProviderMachineName = "wsp-configmgr01.usc.internal" # SMS Provider machine name
+
+# Customizations
+$initParams = @{}
+#$initParams.Add("Verbose", $true) # Uncomment this line to enable verbose logging
+#$initParams.Add("ErrorAction", "Stop") # Uncomment this line to stop the script on any errors
+
+# Do not change anything below this line
+
+# Import the ConfigurationManager.psd1 module 
+if((Get-Module ConfigurationManager) -eq $null) {
+    Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" @initParams 
+}
+
+# Connect to the site's drive if it is not already present
+if((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue) -eq $null) {
+    New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $ProviderMachineName @initParams
+}
+
+# Set the current location to be the site code.
+Set-Location "$($SiteCode):\" @initParams
+
+#Get collections whos schedule is set hourly
+
+$Periodic = @()
+$Incremental = @()
+$IncPlusPreiodic = @()
+
+Get-CfgCollectionsByFolder -FolderName 'Software Distribution' | %{
+    $Col = Get-CMCollection -Name $_.CollectionName
+    Switch($Col.RefreshType) {
+        2 {
+            $Periodic += $Col
+        }
+        4 {
+            $Incremental += $Col
+        }
+        6 {
+            $IncPlusPreiodic += $Col
+        }
+    }
+}
+
+$Sched = New-CMSchedule -RecurInterval Days -RecurCount 1 -Start (Get-Date "17/04/2018 2:05")
+
+#
+$Periodic | Where-Object {
+    $_.RefreshSchedule.HourSpan -eq 1
+} | %{
+
+    $Col = $_
+    Try {
+        Set-CMCollection -RefreshSchedule $Sched
+    } catch {
+        Write-Output "Failed to set $($Col.Name)"
+    }
+}
+
+$Incremental | %{
+    $Col = $_
+    Try {
+        $Col | Set-CMCollection -RefreshSchedule $Sched -RefreshType Periodic
+    } catch {
+        Write-Output "Failed to set $($Col.Name)"
+    }
+}
+
+$IncPlusPreiodic | %{
+    $Col = $_
+    Try {
+        $Col | Set-CMCollection -RefreshSchedule $Sched -RefreshType Periodic
+    } catch {
+        Write-Output "Failed to set $($Col.Name)"
+    }
+}
+#>
+
+# 145 collections set to update hourly
+
+#Get collections whoes schedule is incremental
+
+<#
+$Incremental = Get-CfgCollectionsByFolder -FolderName 'Software Distribution' | %{
+    Get-CMCollection -Name $_.CollectionName | Where-Object {
+        $_.RefreshType -eq 4
+    }
+}
+#>
+
+# 264 collections whoes schedule is incremental
+
+# Get collections whoes schedule is incremental and periodic
+<#
+$IncPlusPeriodic = Get-CfgCollectionsByFolder -FolderName 'Software Distribution' | %{
+    Get-CMCollection -Name $_.CollectionName | Where-Object {
+        $_.RefreshType -eq 6
+    }
+}
+#>
+#Update a single collection to overnight.
+<#
+$Col = get-cmcollection -Name 'Autodesk DWG TrueView 2012 EXE WKS'
+
+$Col | Set-CMCollection -RefreshSchedule $Sched
+#>
+
+#Update incrementals to daily
+<#
+$Sched = New-CMSchedule -RecurInterval Days -RecurCount 1 -Start (Get-Date "17/04/2018 2:05")
+$Colls | Set-CMCollection -RefreshSchedule $Sched
+$Incremental | Set-CMCollection -RefreshSchedule $sched -RefreshType Periodic
+$IncPlusPeriodic | Set-CMCollection -RefreshSchedule $sched -RefreshType Periodic
+#>
