@@ -47,7 +47,7 @@ if((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue
 Set-Location "$($SiteCode):\" @initParams
 
 $App = Get-CMApplication -Name $NewAppName
-$SupercededApps = Get-CMApplication -Name $OldAppFilter | Where-Object { $_.LocalizedDisplayName -ne $App.LocalizedDisplayName }
+$SupercededApps = Get-CMApplication -Name $Filter | Where-Object { $_.LocalizedDisplayName -ne $App.LocalizedDisplayName }
 ForEach ($SupercededApp in $SupercededApps) {
     $DTs = $SupercededApp | Get-CMDeploymentType
     ForEach ($DT in $DTs) {
