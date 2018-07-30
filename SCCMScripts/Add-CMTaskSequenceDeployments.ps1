@@ -1,5 +1,5 @@
 ﻿[CmdLetBinding()]
-Param([Parameter(Mandatory=$True)]$TaskSequenceName)
+Param([Parameter(Mandatory=$True)]$TaskSequenceName,[Switch]$Whatif)
 #
 # Press 'F5' to run this script. Running this script will load the ConfigurationManager
 # module for Windows PowerShell and will connect to the site.
@@ -87,7 +87,7 @@ $Deployments | ForEach-Object {
         'Purpose' = $_.DeployPurpose
         'Success' = $True
     }
-    If (New-CMTaskSequenceDeployment @_ -ErrorAction SilentlyContinue) {
+    If (New-CMTaskSequenceDeployment @_ -ErrorAction SilentlyContinue -Whatif:$Whatif) {
         $Object.Success = $True
     } else {
         $Object.Success = $False
