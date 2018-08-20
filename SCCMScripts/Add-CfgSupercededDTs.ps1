@@ -24,7 +24,8 @@ Param(
     [Parameter(Mandatory=$True)]$SiteCode,
     [Parameter(Mandatory=$True)]$SiteServer,
     [Parameter(Mandatory=$True)]$NewAppName,
-    [Parameter(Mandatory=$True)]$Filter)
+    [Parameter(Mandatory=$True)]$Filter,
+    [switch]$WhatIf)
 
 # Customizations
 $initParams = @{}
@@ -44,6 +45,7 @@ if((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue
 }
 
 # Set the current location to be the site code.
+Push-Location
 Set-Location "$($SiteCode):\" @initParams
 
 $App = Get-CMApplication -Name $NewAppName
@@ -51,6 +53,8 @@ $SupercededApps = Get-CMApplication -Name $Filter | Where-Object { $_.LocalizedD
 ForEach ($SupercededApp in $SupercededApps) {
     $DTs = $SupercededApp | Get-CMDeploymentType
     ForEach ($DT in $DTs) {
-        Add-CMDeploymentTypeSupersedence -SupersedingDeploymentType ($App | Get-CMDeploymentType) -SupersededDeploymentType $DT -IsUninstall $True
+        Write-Verbose "Adding DT $($DT.LocalizedDisplayName) as superceded"
+        Add-CMDeploymentTypeSupersedence -SupersedingDeploymentType ($App | Get-CMDeploymentType) -SupersededDeploymentType $DT -IsUninstall $True -WhatIf:$WhatIf
     }
 }
+Pop-Location
