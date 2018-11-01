@@ -43,7 +43,7 @@ Push-Location
 
 Set-Location "$($SiteCode):\"
 if (-Not $TaskSequenceName) {
-    $TaskSequencesInDev = Get-CfgItemsByFolder -ItemType TaskSequence -FolderName Development 
+    $TaskSequencesInDev = Get-CfgItemsByFolder -ItemType TaskSequence -FolderName Production 
     $TSs = $TaskSequencesInDev | ForEach-Object { 
         Get-CMTaskSequence -TaskSequencePackageId $PSItem.ObjectID
     }
@@ -63,13 +63,12 @@ if (-Not $TaskSequenceName) {
         $TSSel = Read-Host -Prompt "Please chose a task sequence to retire or $i to quit)"
         If ($TSSel -eq $i) { return }
     }
-    $TaskSequence = $TSs[$i]
-    $TaskSequenceName = $TaskSequence.Name
+    $TaskSequence = $TSs[$TSSel]
 } else {
     $TaskSequence = Get-CMTaskSequence -Name $TaskSequenceName
 }
 
 $TaskSequence | Set-CMTaskSequence -EnableTaskSequence $False
-Move-CMObject -ObjectID $TaskSequence.PackageID -FolderPath "$SiteCode:\TaskSequence\Retired"
+Move-CMObject -ObjectID $TaskSequence.PackageID -FolderPath "${SiteCode}:\TaskSequence\Retired"
 
 Pop-Location
