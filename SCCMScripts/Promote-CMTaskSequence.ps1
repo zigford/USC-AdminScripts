@@ -91,6 +91,7 @@ $Deployments = Import-CSV -Path $DeploymentsCSV | ForEach-Object {
     If ($HT['Schedule'] -eq 'Now') {
         $HT['Schedule'] = $Now
     }
+    $HT['DeploymentOption'] = "DownloadContentLocallyWhenNeededByRunningTaskSequence"
     $HT['TaskSequencePackageId'] = $TaskSequence.PackageID 
     $HT
 }
@@ -98,9 +99,10 @@ $Deployments = Import-CSV -Path $DeploymentsCSV | ForEach-Object {
 Push-Location
 Set-Location "$($SiteCode):\"
 
+Move-CMObject -ObjectID $TaskSequence.PackageID -FolderPath "${SiteCode}:\TaskSequence\Production"
+
 $Deployments | ForEach-Object {
     Write-Verbose ("Creating deployment of {0} to {1} as {2}" -f $TaskSequenceName,$_.CollectionName,$_.DeployPurpose)
-    $_.ReRunBehavior
     $Object = [PSCustomObject]@{
         'TaskSequence' = $TaskSequenceName
         'CollectionName' = $_.CollectionName
@@ -114,4 +116,5 @@ $Deployments | ForEach-Object {
     }
     $Object
 }
+
 Pop-Location
