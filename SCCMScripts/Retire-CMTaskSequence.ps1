@@ -11,7 +11,7 @@ Function InsModule {
     Switch ($ModuleName) {
         'ConfigurationManager' {
             if((Get-Module ConfigurationManager) -eq $null) {
-                Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"
+                Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1" -EA Stop
             }
         }
         Default {
