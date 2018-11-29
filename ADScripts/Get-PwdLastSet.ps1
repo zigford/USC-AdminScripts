@@ -8,6 +8,9 @@
     .PARAMETER Identity
     The SamAccountName or Username of the account to query
 
+    .PARAMETER Workstation
+    Switch to search for workstation accounts
+
     .EXAMPLE
     PS> .\Get-PwdLastSet.ps1 -Id jpharris
 
@@ -47,24 +50,33 @@ Param(
         ParameterSetName = "ID",
         ValueFromPipeline=$True)]$Identity,
     [Parameter(
-        ParameterSetName = "Filter")]$Filter
+        ParameterSetName = "Filter")]$Filter,
+    [switch]$Workstation
 )
 
 Begin {
-    If (Get-Module -ListAvailable ActiveDirectory -EA SilentlyContinue) {
+    If ((Get-Module ActiveDirectory) -or (Get-Module -ListAvailable ActiveDirectory -EA SilentlyContinue)) {
         Import-Module ActiveDirectory
     } Else {
         Write-Error "Unable to find Active Directory module"
     }
     If ($Filter) {
-        $Identity = Get-ADUser -Filter $Filter -Properties PwdLastSet
+        If ($Workstation) {
+            $Identity = Get-ADComputer -Filter $Filter -Properties PwdLastSet
+        } else {
+            $Identity = Get-ADUser -Filter $Filter -Properties PwdLastSet
+        }
     }
 }
 
 Process {
     ForEach ($Id in $Identity) {
         If (-Not $Id.PwdLastSet) {
-            $Id = Get-ADUser -Identity $Id -Properties PwdLastSet
+            If ($Workstation){
+                $Id = Get-ADComputer -Identity $Id -Properties PwdLastSet
+            } else {
+                $Id = Get-ADUser -Identity $Id -Properties PwdLastSet
+            }
         }
         [PSCustomObject]@{
             'SamAccountName' = $Id.SamAccountName
