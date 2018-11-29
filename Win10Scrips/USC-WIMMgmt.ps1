@@ -1,5 +1,6 @@
 function Get-WimInfo {
-    Param($Release='1709',$Index,$Root='appdev')
+    Param($Release='1709',$Index,$Root='appdev',
+    [switch]$slow)
     Begin{
         $Build = Get-ReleaseBuild $Release
         $Root = Switch ($Root) {
@@ -8,18 +9,84 @@ function Get-WimInfo {
         }
         echo $Root
         if ($Index) {
-            $Index="/Index:$Index"
+            $IndexCMD="/Index:$Index"
         }
     }
 
     Process {
-        Dism.exe /Get-Wiminfo /WimFile:"$Root\$Build" $Index
+        if ($slow) {
+            $Ver = Get-WimIndexVerByPackage -ImagePath "$Root\$Build" -Index $Index
+            Dism.exe /Get-Wiminfo /WimFile:"$Root\$Build" $IndexCMD
+            echo "Version: $Ver"
+        } else {
+            Dism.exe /Get-Wiminfo /WimFile:"$Root\$Build" $IndexCMD
+        }
     }
 }
 
 function Get-WimIndex {
     Param([Parameter(Mandatory=$True)]$Path)
     Get-WindowsImage -ImagePath $Path | Select-Object -Expand ImageIndex
+}
+
+function Mount-WimIndex {
+    Param(
+    [Parameter(Mandatory=$True)]$ImagePath,
+    [Parameter(Mandatory=$True)]$Index
+    )
+
+    #Setup Randon mount point
+    $MountPath = New-Item -Path $env:temp -Name (Get-Random) -ItemType Directory
+    #Mount the WIM
+    Dism.exe /Mount-Wim /WimFile:"$ImagePath" /index:$Index /MountDir:"$($MountPath.FullName)" /ReadOnly | Out-Null
+    #Check if mounted
+    If (Test-Path -Path "$($MountPath)\Windows") {
+        Write-Verbose "$WimFile Succesfully mounted to $($MountPath)\Windows"
+        return $MountPath
+    } Else {
+        Remove-Item $MountPath -Recurse
+        Write-Error "Mounting WimFile Failed"
+        return
+    }
+}
+
+function Dismount-WimIndex {
+    Param([Parameter(Mandatory=$True)]$MountPath)
+
+    #Unmount WIM
+    Dism.exe /Unmount-Wim /MountDir:$($MountPath.FullName) /Discard | Out-Null
+    If (Test-Path -Path "$($MountPath)\Windows") {
+        Write-Error "Unmount of $WimFile failed"
+        return
+    } Else {
+        Write-Verbose "Succesfully unmounted WimFile."
+    }
+    Remove-Item $MountPath -Recurse
+}
+
+function Get-WimIndexVerByPackage {
+    Param(
+    [Parameter(Mandatory=$True)]$ImagePath,
+    [Parameter(Mandatory=$True)]$Index
+    )
+
+    $MountPath = Mount-WimIndex -ImagePath $ImagePath -Index $Index
+
+    Try {
+        $Build = (Dism.exe /Image:"$MountPath" /Get-Packages | Select-String "Identity" -Context 0,4) | 
+        ForEach-Object {
+            $PSItem.Line -match '(\d+\.){3}\d+' | Out-Null
+            [Version]::Parse($Matches[0])
+        } | Sort-Object | Select-Object -Last 1
+    } Catch {
+        Write-Error "Unable to process package data"
+    }
+
+    Dismount-WimIndex -MountPath $MountPath
+
+    If ($Build) {
+        return $Build.Minor
+    }
 }
 
 function Get-WimIndexVer {
@@ -51,6 +118,7 @@ function Get-ReleaseBuild {
         1703 {'15063'}
         1709 {'16299'}
         1803 {'17134'}
+        1809 {'17763'}
     }
     $Build = "Microsoft Windows 10 x64 $Num.wim"
     If ($Number) {
@@ -68,6 +136,7 @@ function Get-BuildRelease {
        15063 {'1703'}
        16299 {'1709'}
        17134 {'1803'}
+       17763 {'1809'}
     }
 }
 
@@ -109,7 +178,7 @@ function Copy-WimIndex {
             $Index = Get-WimIndex -Path "$SourceRoot\$Build" | Select-Object -Last 1
         }
         $Image = Get-WindowsImage -ImagePath "$SourceRoot\$Build" -Index $Index
-        $BuildVer = Get-WimIndexVer -Image $Image
+        $BuildVer = Get-WimIndexVerByPackage -ImagePath "$SourceRoot\$Build" -Index $Index
         $DestName = "Microsoft Windows 10 x64 $(Get-ReleaseBuild $Release -Number) $BuildVer"
         If ($WhatIf) {
 
@@ -163,7 +232,8 @@ Function Update-WimIndexDesc {
     $Image = Get-WindowsImage -ImagePath $Path -Index $Index
     $ImageX = Find-Imagex
     #$Name = Get-WimIndexName -Image $Image
-    $BuildVer = Get-WimIndexVer -Image $Image
+    #$BuildVer = Get-WimIndexVer -Image $Image
+    $BuildVer = Get-WimIndexVerByPackage -ImagePath "$Path" -Index $Index
     $Name = "Microsoft Windows 10 x64 $(Get-ReleaseBuild $Release -Number) $BuildVer"
     $CurrDesc = Get-WimIndexDesc -Image $Image
     $CmdArgs = "/INFO ""$Path"" $Index ""$Name"" ""$Release"""
@@ -204,11 +274,13 @@ function Copy-AllWimImages {
         $Release = Get-BuildRelease $Build
         $Index = Get-WimIndex -Path $ImageFile.FullName | Select-Object -Last 1
         $Image= Get-WindowsImage -ImagePath $ImageFile.FullName -Index $Index
-        $CapVersion = Get-WimIndexVer -Image $Image
+        #$CapVersion = Get-WimIndexVer -Image $Image
+        $CapVersion = Get-WimIndexVerByPackage -ImagePath $ImageFile.FullName -Index $Index
         $AppdevImageFile = "$(wim -show)\$($ImageFile.Name)"
         $AppdevIndex = Get-WimIndex -Path "$AppdevImageFile" | Select-Object -Last 1
         $AppdevImage = Get-WindowsImage -ImagePath "$AppdevImageFile" -Index $AppdevIndex
-        $AppdevVersion = Get-WimIndexVer -Image $AppdevImage
+        #$AppdevVersion = Get-WimIndexVer -Image $AppdevImage
+        $AppdevVersion = Get-WimIndexVerByPackage -ImagePath "$AppdevImageFile" -Index $AppdevIndex
         If ($CapVersion -gt $AppdevVersion) {
             Copy-WimIndex -Release $Release 
         }
