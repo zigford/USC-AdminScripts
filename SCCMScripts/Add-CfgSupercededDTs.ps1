@@ -19,14 +19,13 @@
     online help
 #>
 
-[CmdLetBinding()]
+[CmdLetBinding(SupportsShouldProcess, ConfirmImpact='Medium')]
 Param(
     [Parameter(Mandatory=$True)]$SiteCode,
     [Parameter(Mandatory=$True)]$SiteServer,
     [Parameter(Mandatory=$True)]$NewAppName,
-    [Parameter(Mandatory=$True)]$Filter,
-    [switch]$WhatIf)
-
+    [Parameter(Mandatory=$True)]$Filter
+)
 # Customizations
 $initParams = @{}
 #$initParams.Add("Verbose", $true) # Uncomment this line to enable verbose logging
@@ -54,7 +53,12 @@ ForEach ($SupercededApp in $SupercededApps) {
     $DTs = $SupercededApp | Get-CMDeploymentType
     ForEach ($DT in $DTs) {
         Write-Verbose "Adding DT $($DT.LocalizedDisplayName) as superceded"
-        Add-CMDeploymentTypeSupersedence -SupersedingDeploymentType ($App | Get-CMDeploymentType) -SupersededDeploymentType $DT -IsUninstall $True -WhatIf:$WhatIf
+        If ($PSCmdlet.ShouldProcess("$NewAppName", "Adding $($DT.LocalizedDisplayName)")) {
+            Add-CMDeploymentTypeSupersedence `
+                -SupersedingDeploymentType ($App | Get-CMDeploymentType) `
+                -SupersededDeploymentType $DT `
+                -IsUninstall $True
+        }
     }
 }
 Pop-Location
