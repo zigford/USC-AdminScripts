@@ -59,7 +59,7 @@ $driveMappingConfig.GetEnumerator() | ForEach-Object {
     Write-Output "Mapping network drive $($PSItem.UNCPath)"
     New-PSDrive -PSProvider FileSystem -Name $PSItem.DriveLetter `
         -Root $PSItem.UNCPath -Description $PSItem.Description -Persist `
-        -Scope global -ErrorAction
+        -Scope global -ErrorAction SilentlyContinue
     $DriveObj = New-Object -ComObject Shell.Application
     $DriveObj.NameSpace("$($PSItem.DriveLetter):").Self.Name=
         $PSItem.Description
