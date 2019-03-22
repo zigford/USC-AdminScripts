@@ -8,7 +8,8 @@ $driveMappingConfig=@()
 ######################################################################
 
 <#
-   Add your internal Active Directory Domain name and custom network drives below
+   Add your internal Active Directory Domain name and custom network
+   drives below
 #>
 
 $dnsDomainName= "usc.internal"
@@ -36,36 +37,33 @@ $retries=0
 $maxRetries=3
 
 Write-Output "Starting script..."
-do {
+Do {
 
-    if (Resolve-DnsName $dnsDomainName -ErrorAction SilentlyContinue){
-
+    If (Resolve-DnsName $dnsDomainName -ErrorAction SilentlyContinue){
         $connected=$true
-
-    } else{
-
+    } else {
         $retries++
-
-        Write-Warning "Cannot resolve: $dnsDomainName, assuming no connection to fileserver"
-
+        Write-Warning ("Cannot resolve: $dnsDomainName, assuming no" +
+                " connection to fileserver")
         Start-Sleep -Seconds 3
-
         if ($retries -eq $maxRetries){
-
-            Throw "Exceeded maximum numbers of retries ($maxRetries) to resolve dns name ($dnsDomainName)"
+            Throw ("Exceeded maximum numbers of retries ($maxRetries)" +
+                   "to resolve dns name ($dnsDomainName)")
         }
     }
 
-}while( -not ($Connected))
+} While (-Not ($Connected))
 
 #Map drives
-    $driveMappingConfig.GetEnumerator() | ForEach-Object {
+$driveMappingConfig.GetEnumerator() | ForEach-Object {
+    Write-Output "Mapping network drive $($PSItem.UNCPath)"
+    New-PSDrive -PSProvider FileSystem -Name $PSItem.DriveLetter `
+        -Root $PSItem.UNCPath -Description $PSItem.Description -Persist `
+        -Scope global -ErrorAction
+    $DriveObj = New-Object -ComObject Shell.Application
+    $DriveObj.NameSpace("$($PSItem.DriveLetter):").Self.Name=
+        $PSItem.Description
 
-        Write-Output "Mapping network drive $($PSItem.UNCPath)"
-
-        New-PSDrive -PSProvider FileSystem -Name $PSItem.DriveLetter -Root $PSItem.UNCPath -Description $PSItem.Description -Persist -Scope global
-
-        (New-Object -ComObject Shell.Application).NameSpace("$($PSItem.DriveLEtter):").Self.Name=$PSItem.Description
 }
 
 Stop-Transcript
