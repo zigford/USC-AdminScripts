@@ -1,8 +1,5 @@
 Start-Transcript -Path $(Join-Path $env:temp "DriveMapping.log")
 
-$driveMappingConfig=@()
-
-
 ######################################################################
 #                section script configuration                        #
 ######################################################################
@@ -12,15 +9,14 @@ $driveMappingConfig=@()
    drives below
 #>
 
+$driveMappingConfig=@()
 $dnsDomainName= "usc.internal"
-
 
 $driveMappingConfig+= [PSCUSTOMOBJECT]@{
     DriveLetter = "G"
     UNCPath= "\\usc.internal\dfs\General"
     Description="General"
 }
-
 
 $driveMappingConfig+=  [PSCUSTOMOBJECT]@{
     DriveLetter = "S"
@@ -60,9 +56,11 @@ $driveMappingConfig.GetEnumerator() | ForEach-Object {
     New-PSDrive -PSProvider FileSystem -Name $PSItem.DriveLetter `
         -Root $PSItem.UNCPath -Description $PSItem.Description -Persist `
         -Scope global -ErrorAction SilentlyContinue
-    $DriveObj = New-Object -ComObject Shell.Application
-    $DriveObj.NameSpace("$($PSItem.DriveLetter):").Self.Name=
-        $PSItem.Description
+    If ($?) {
+        $DriveObj = New-Object -ComObject Shell.Application
+        $DriveObj.NameSpace("$($PSItem.DriveLetter):").Self.Name=
+            $PSItem.Description
+    }
 
 }
 
