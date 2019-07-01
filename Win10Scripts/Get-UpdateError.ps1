@@ -118,7 +118,7 @@ If ((Test-Path -Path $SetupAct) -and (-Not $SMSTS)) {
             $Time = [datetime]::ParseExact($_.Split(',')[0], 'yyyy-MM-dd HH:mm:ss',[System.Globalization.CultureInfo]::InvariantCulture)
         } catch {
             $Time = $null
-            Write-Debug "Unable to convert $($_.Split(','[0])) to time"
+            Write-Debug "Unable to convert $($_.Split(',')[0]) to time"
         }
         [PSCustomObject]@{
             'ComputerName' = If ($ComputerName) { $ComputerName} else {$env:COMPUTERNAME}
