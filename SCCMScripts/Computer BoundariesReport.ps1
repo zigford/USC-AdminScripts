@@ -163,6 +163,9 @@ Function Get-SiteReport {
             $_ | Select-Object ComputerName,LastLogonUserName,Model,
                 @{label='Boundary';expression={
                     (Get-BestBoundaryName -IPAddresses $IPs)
+                }},
+                @{label='PrimaryWKSGroup';expression={
+                    (Get-LabGroup $_.ComputerName).Lab
                 }}
         }
         $Computers | Export-CSV CacheFile.csv
@@ -226,14 +229,21 @@ Function Get-BestSiteMatch {
     Param($CSV=".\boo.csv")
 
     Import-Csv $CSV | Group-Object -Property ComputerName |? Count -ge 5
-
-
 }
 
-#     $IP = Get-CfgClientInventory -ComputerName $_.ComputerName |
-#     Select-Object -ExpandProperty ipaddresses | Where-Object {
-#         ([System.Net.IPAddress]::Parse($_)).AddressFamily -eq "InterNetwork"
-#     } | Select-Object -Last 1
-# 
-#     If ($IP -ne $Null) {
-# } | Export-Csv newlist-unfiltered.csv -NoTypeInformation
+function Get-LabGroup {
+    Param($ComputerName)
+    $ADObject = Get-ADComputer -id $Computername -prop memberof
+    $Members = $ADObject.MemberOf | Where-Object {
+         $_ -match 'WKS_(?!(Inactive|Research_))'
+    }
+    [PSCustomObject]@{
+        ComputerName = $Computername
+        Lab = if ($Members -ne $null) {
+            $RegEx = [regex]'^CN=WKS_(?<Lab>\w+),.*$'
+            $RegEx.Match($Members).Groups['Lab'].Value
+        } else {
+            $null
+        }
+    }
+}
