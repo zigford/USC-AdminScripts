@@ -156,6 +156,7 @@ Function Get-SiteReport {
         $Computers = Get-CfgCollectionMembers $Collection |
         Get-CfgClientInventory `
             -Properties Model | ForEach-Object {
+            $ADInfo = Get-ADInfo $_.ComputerName
             $IPs = $_.IPAddresses | Where-Object {
                 ([System.Net.IPAddress]::Parse($_)).AddressFamily -eq
                     "InterNetwork"
@@ -165,7 +166,10 @@ Function Get-SiteReport {
                     (Get-BestBoundaryName -IPAddresses $IPs)
                 }},
                 @{label='PrimaryWKSGroup';expression={
-                    (Get-LabGroup $_.ComputerName).Lab
+                    $ADInfo.Lab
+                }},
+                @{label='OU';expression={
+                    $ADInfo.OU
                 }}
         }
         $Computers | Export-CSV CacheFile.csv
@@ -231,11 +235,15 @@ Function Get-BestSiteMatch {
     Import-Csv $CSV | Group-Object -Property ComputerName |? Count -ge 5
 }
 
-function Get-LabGroup {
+function Get-ADInfo {
     Param($ComputerName)
     $ADObject = Get-ADComputer -id $Computername -prop memberof
     $Members = $ADObject.MemberOf | Where-Object {
          $_ -match 'WKS_(?!(Inactive|Research_))'
+    }
+    $DN = $ADObject.DistinguishedName
+    If ($DN -match '^CN=\w+,(?<ou>.*),OU=Workstations,DC=usc,DC=internal') {
+        $OU = $Matches['ou'] -replace ',*OU=','\'
     }
     [PSCustomObject]@{
         ComputerName = $Computername
@@ -245,5 +253,6 @@ function Get-LabGroup {
         } else {
             $null
         }
+        OU = $OU 
     }
 }
