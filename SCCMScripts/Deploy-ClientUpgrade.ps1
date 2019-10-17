@@ -1,14 +1,25 @@
 [CmdLetBinding(SupportsShouldProcess)]
-Param()
+Param(
+        [Parameter(Mandatory=$True)]$CollectionFilter,
+        [ValidateSet(
+            'Monday',
+            'Tuesday',
+            'Wednesday',
+            'Thursday',
+            'Friday',
+            'Saturday',
+            'Sunday'
+        )]$DayOfWeek='Friday'
+     )
 
 $SiteCode = 'SC1'
 $SiteServer = 'wsp-configmgr01'
 
-if((Get-Module ConfigurationManager) -eq $null) {
+if($Null -eq (Get-Module ConfigurationManager)) {
     Import-Module "$($ENV:SMS_ADMIN_UI_PATH)\..\ConfigurationManager.psd1"
 }
 
-if((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue) -eq $null) {
+if($Null -eq (Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue)) {
     New-PSDrive -Name $SiteCode -PSProvider CMSite -Root $SiteServer
 }
 
@@ -16,7 +27,11 @@ if((Get-PSDrive -Name $SiteCode -PSProvider CMSite -ErrorAction SilentlyContinue
 Push-Location
 Set-Location "$($SiteCode):\"
 
-$Collections = Get-CMCollection -Name '*Windows Server Patch*Tues*am'
+$Collections = Get-CMCollection -Name $CollectionFilter
+If (-Not ($Collections)) {
+    throw "No collections found with filter"
+}
+
 $ClientUpgradeSettings = @{
     StandardProgram = [switch]$True
     PackageName = 'Configuration Manager Client Upgrade'
@@ -28,50 +43,55 @@ $ClientUpgradeSettings = @{
     SlowNetworkOption = 'DownloadContentFromDistributionPointAndLocally'
 }
 
-function Get-Tuesday { 
-    <#  
-    .SYNOPSIS   
-    Get the Patch Tuesday of a month 
-    .PARAMETER month 
+function Get-DayOfWeek {
+    <#
+    .SYNOPSIS
+    Get the Friday of a month
+    .PARAMETER month
     The month to check
-    .PARAMETER year 
+    .PARAMETER year
     The year to check
-    .EXAMPLE  
-    Get-PatchTue -month 6 -year 2015
-    .EXAMPLE  
-    Get-PatchTue June 2015
-    #> 
-    [CmdLetBinding()]    
-    param( 
+    .EXAMPLE
+    Get-Friday -month 6 -year 2015
+    .EXAMPLE
+    Get-Friday June 2015
+    #>
+    [CmdLetBinding()]
+    param(
         [int]$Occurring=1,
         [int]$Month,
-        [int]$Year
-    ) 
+        [int]$Year,
+        [string]$DayOfWeek
+    )
     If (-Not $Month) { $Month = Get-Date -Format 'MM' }
     If (-Not $Year)  { $Year  = Get-Date -Format 'yyyy'}
     $firstdayofmonth = [datetime] ([string]$Month + "/1/" + [string]$Year)
-    $Tuesday = (0..30 | ForEach-Object {$firstdayofmonth.adddays($_) } | Where-Object {$_.dayofweek -like "Tue*"})[$Occurring -1 ]
-    If ($Tuesday -gt (Get-Date)) {
-        $Tuesday
+    $Day = (0..30 | ForEach-Object {$firstdayofmonth.adddays($_) } | Where-Object {$_.dayofweek -eq $DayOfWeek})[$Occurring -1 ]
+    If ($Day -gt (Get-Date)) {
+        $Day
     } else {
         If ($Month -eq '12') {
-            Get-Tuesday -Occurring $Occurring -Month 1 -Year ($Year + 1)
+            $Year = $Year + 1
+            $Month = 1
         } else {
-            Get-Tuesday -Occurring $Occurring -Month ($Month + 1)
+            $Month = $Month + 1
         }
+        Get-DayOfWeek -Occurring $Occurring `
+            -Month $Month -Year $Year `
+            -DayOfWeek $DayOfWeek
     }
 }
 
 function Get-Schedule {
     <#Work out a schedule based on a collection name#>
     Param($CollectionName)
-    $WhichTuesday = Switch -Regex ($CollectionName) {
+    $WhichDay = Switch -Regex ($CollectionName) {
         '.*1st.*' {1}
         '.*2nd.*' {2}
         '.*3rd.*' {3}
         '.*4th.*' {4}
     }
-    $ScheduleTime = Get-date "$(Get-date (Get-Tuesday -Occurring $WhichTuesday) -format 'dd/MM/yyyy') 5am"
+    $ScheduleTime = Get-date "$(Get-date (Get-DayOfWeek -Occurring $WhichDay) -format 'dd/MM/yyyy') 5am"
     New-CMSchedule -Start $ScheduleTime -Nonrecurring -WhatIf:$False
 }
 
