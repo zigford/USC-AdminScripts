@@ -96,6 +96,8 @@ If ($ComputerName) {
     $RootPath = "C:"
 }
 
+Remove-Variable ResultFound -ErrorAction SilentlyContinue
+Remove-Variable LastLogEntryTime -ErrorAction SilentlyContinue
 $Panther = "$RootPath\`$WINDOWS.~BT\Sources\Panther"
 $SetupAct = "$Panther\setupact.log"
 If ((Test-Path -Path $SetupAct) -and (-Not $SMSTS)) {
@@ -116,9 +118,10 @@ If ((Test-Path -Path $SetupAct) -and (-Not $SMSTS)) {
         }
         Try {
             $Time = [datetime]::ParseExact($_.Split(',')[0], 'yyyy-MM-dd HH:mm:ss',[System.Globalization.CultureInfo]::InvariantCulture)
+            $LastLogEntryTime = $Time
         } catch {
             $Time = $null
-            Write-Debug "Unable to convert $($_.Split(','[0])) to time"
+            Write-Debug "Unable to convert $($_.Split(',')[0]) to time"
         }
         [PSCustomObject]@{
             'ComputerName' = If ($ComputerName) { $ComputerName} else {$env:COMPUTERNAME}
@@ -127,11 +130,17 @@ If ((Test-Path -Path $SetupAct) -and (-Not $SMSTS)) {
             'Component' = ([regex]'.*,\s\w+\s+(?<comp>\w+)\s.*').Match($_).Groups[1].Value
             'Error' = $ETrans
             'Detail' = $Detail
-        } | Where-Object {$_.Error -ne $Null}
+        } | Where-Object {$_.Error -ne $Null} | Tee-Object -Variable ResultFound
     }
 } else {
     # Main setuplog doesn't exist. try for an smstslog
     $SMSTSLogs = Get-ChildItem -Path "$RootPath\Windows\CCM\Logs" -Filter smsts*.log -Recurse
+    If ($SMSTSLogs) {
+        Write-Warning -Message "No Windows Update log found, trying smstslogs."
+    } else {
+        Write-Warning -Message "No Windows Update logs or SMSTS logs found."
+        return
+    }
     ForEach ($SMSTSLog in $SMSTSLogs) {
         Get-Content -Path $SMSTSLog.FullName -Tail 100 | ForEach-Object {
             $Component = ([regex]'.*component="(?<comp>\w+)".*').Match($_).Groups[1].Value
@@ -141,6 +150,7 @@ If ((Test-Path -Path $SetupAct) -and (-Not $SMSTS)) {
                 $date = ([regex]'.*date="(?<date>\d\d-\d\d-\d\d\d\d)".*').Match($_).Groups[1].Value
                 If ($time -eq '' -or $date -eq '') { Write-Verbose "$_" -Verbose}
                 $DateTime = [datetime]::ParseExact("$date $time", 'MM-dd-yyyy HH:mm:ss', [System.Globalization.CultureInfo]::InvariantCulture)
+                $LastLogEntryTime = $Time
                 $Msg = ([regex]'<!\[LOG\[(?<msg>.*)\]LOG\]!>.*').Match($_).Groups[1].Value
                 $HexError = ([regex]'.*(?<code>0[xX][0-9a-fA-F]+).*').Matches($_)
                 If ($HexError | Select-Object Groups) {
@@ -161,8 +171,19 @@ If ((Test-Path -Path $SetupAct) -and (-Not $SMSTS)) {
                     'Msg' = $Msg
                     'ErrorName' = $ETrans
                     'ErrorDetail' = $Detail
-                } 
+                } | Tee-Object -Variable ResultFound
             }
         }
     }
+}
+
+if (-not ($ResultFound)) {
+    $ExitMessage = "No result codes detected."
+    if ($LastLogEntryTime) {
+        $ExitMessage += " Last log entry was at {0}." -f $LastLogEntryTime
+        if ($LastLogEntryTime.AddMinutes(10) -gt (Get-Date)) {
+            $ExitMessage += " Possibly the update is still in progress."
+        }
+    }
+    Write-Warning -Message $ExitMessage
 }
