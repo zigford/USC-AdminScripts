@@ -178,7 +178,7 @@ function Get-USCQuota {
                             Path,@{label='TemplateName';expression={$_.Template}},
                             @{label='Status';expression={If($_.Disabled){'Disabled'}else{'Enabled'}}},
                             @{label='Used';expression={Get-HRLimit -Size $_.Usage}},
-                            @{label='PercentUsed';expression={"{0:0}%" -f ($_.Usage/$_.Size*100) }},
+                            @{label='PercentUsed';expression={"{0:0}" -f ($_.Usage/$_.Size*100) }},
                             @{label='Available';expression={Get-HRLimit -Size ($_.Size - $_.Usage)}},
                             @{label='Peak';expression={Get-HRLimit -Size $_.PeakUsage}}
             }
