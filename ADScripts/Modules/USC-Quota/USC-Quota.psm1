@@ -1,10 +1,29 @@
-﻿function Get-USCQuota {
+﻿function Get-HRLimit {
+    # convert bytes into human readable number
+    Param($Size)
+    If ($Size -gt 1099511627776) {
+        return "{0:0.##} TB" -f ($Size /1024/1024/1024/1024)
+    } elseif ($Size -gt 1073741824) {
+        return "{0:0.##} GB" -f ($Size /1024/1024/1024)
+    } elseif ($Size -gt 1048576) {
+        return "{0:0.##} MB" -f ($Size /1024/1024)
+    } elseif ($size -gt 1024) {
+        return "{0:0.##} KB" -f ($Size /1024)
+    } else {
+        return "$Size B"
+    }
+}
+
+function Get-USCQuota {
 <#
     .SYNOPSIS
-    Retreive Quota information using dirqutoa with an FSRM Windows server.
+    Retreive Quota information using FileServerResourceManager PowerShell modules.
+    The existance of FileServerResourceManager modules make the USC-Quota module mostly redundant,
+    but hey, some people still use it.
     
     .DESCRIPTION
-    Uses dirquota.exe and parses returned strings into a custom object usable in Powershell.
+    Originally used dirquota.exe and parsed results out to PowerShell objects. Now that FileServerResouceManage
+    module exists, this functions job is to replicate the old dirquote outputs to maintaine legacy scripts.
     
     .PARAMETER TemplateName
     The name of a quota template. Restricts query to return results from Quota's matching named template.
@@ -13,7 +32,7 @@
     A switch which will simply output a list of templates configured on the FSRM server.
 
     .PARAMETER Server
-    Accepts the name of the FSRM you are connecting to. Defaults to WSP-File02
+    Accepts the name of the FSRM you are connecting to. Defaults to WSP-FILE-VS48
     
     .EXAMPLE
     C:\PS>Get-USCQuota -ListTemplates
@@ -74,88 +93,74 @@
     1.3 - [14/11/16 Darryl Rees] Changed to make work with win10 dirquota (parse with regex)
     1.3.1 - [18/04/2017 DR] Changed regexes to match sizes with commas and/or ending with KB or bytes
     1.3.2 - [10/05/2017 JH] Added new parameter -Scan to update statistics prior to retreival
+    2.0   - [05/12/2022 JH] Replace dirquota with native FSRM modules. You should use these modules directly.
+                            These changes are more of a shim for existing use cases around this module.
 #>
+    [CmdLetBinding()]
 	Param($UserName,[string[]]$TemplateName,$Server="wsp-file-vs48",[Switch]$ListTemplates,[switch]$Scan)
-	If (! (Test-CurrentAdminRights) ) { Write-Host -ForegroundColor Red "Please run as Admin"; return }
-    If ($ListTemplates) {
-    	$QuotaCMD = dirquota t l /remote:$($Server)
-	    $QuotaCMD | Select-String -Pattern "Template Name" -Context 0,6 | `
-            %{$NewObj = "" | Select-Object TemplateName,Limit,Type; 
-                $NewObj.TemplateName = $_.Line.Split(":")[1].TrimStart(" "); 
-                $NewObj.Limit = $_.Context.PostContext[0].Split(":")[1].TrimStart(" ").Split("(")[0]; 
-                $NewObj.Type = $_.Context.PostContext[0].Split("(")[1].Split(")")[0];
-                $NewObj}
-    } Else {
-        
-        $defaultProperties = @('UserName','Available', 'Used')
-        $defaultDisplayPropertySet = New-Object System.Management.Automation.PSPropertySet('DefaultDisplayPropertySet',[string[]]$defaultProperties)
-        $PSStandardMembers = [System.Management.Automation.PSMemberInfo[]]@($defaultDisplayPropertySet)
-        If ( $TemplateName -ne $null ) {$SourceTemplate = "/sourcetemplate:$($TemplateName)"}
-        If ( $UserName -ne $null ) {
-            If (!(Get-Module -Name ActiveDirectory)) {
-                If (!(Get-Module -ListAvailable -Name ActiveDirectory)) { Write-Host -ForegroundColor Red "RSA Tools not available"; return } Else {
-                    Import-Module -Name ActiveDirectory
-                }
-            }
-            Try {
-                $User = Get-ADUser -Identity $UserName
-            } Catch { 
-                Write-Host -ForegroundColor Red "$Username not found"; return 
-            }
-            If ( $User.DistinguishedName -match "Staff" ) {
-                $QuotaPath = "/path:J:\staffhome\$($User.SamAccountName)"
-            } ElseIf ( $User.DistinguishedName -match "Student" ) {
-                $QuotaPath = "/path:F:\studenthome\$($User.SamAccountName)"
-            } Else { Write-Host -ForegroundColor Red "$Username folder not found"; return }
-        }
-
-#        $ErrorActionPreference = "SilentlyContinue"
-        If ($Scan) {
-            Write-Verbose "Scanning quota to update statistics" -Verbose
-            dirquota.exe q s /remote:$($Server) $QuotaPath | Out-Null
-            Start-Sleep -Seconds 10
-        }
-        $dirquota=dirquota.exe q l /remote:$($Server) $SourceTemplate $QuotaPath | Select-String -Pattern "Quota Path" -Context 0,12
-
-        $dirquota -match '(Quota Path:\s*(.*\\)*)(?<username>[^\\^\r\n]*)[\r\n]+' | out-null
-        $username=$matches['username']
-        $dirquota -match '(Quota Path:\s*)(?<path>[^\s\r\n]+)[\r\n]+' | out-null
-        $path=$matches['path']
-        $dirquota -match '(Share Path:\s*)(?<sharepath>[^\s\r\n]+)[\r\n]+' | out-null
-        $sharepath=$matches['sharepath']
-        $dirquota -match '(Quota Status:\s*)(?<status>[^\s\r\n]+)[\r\n]+' | out-null
-        $status=$matches['status']
-        $dirquota -match '(Limit:\s*)(?<limit>[0-9,.]* (MB)|(GB|KB|bytes)).*[\r\n]+' | out-null
-        $limit=$matches['limit']
-        $dirquota -match '(Source Template:\s*)(?<templatename>[^\(\r\n]*).*[\r\n]+' | out-null
-        $templatename=($matches['templatename']).trim()
-        $dirquota -match '(Used:\s*)(?<used>[0-9,.]* (MB|GB|KB|bytes)) \((?<percentused>[0-9.]*\%)\)[\r\n]+' | out-null
-        $used=$matches['used']
-        $percentused=$matches['percentused']
-        $dirquota -match '(Available:\s*)(?<available>[0-9,.]* (MB|GB|KB|bytes)).*[\r\n]+' | out-null
-        $available=$matches['available']
-        $dirquota -match '(Peak Usage:\s*)(?<peakusage>[0-9,.]* (MB|GB|KB|bytes)).*[\r\n]+' | out-null
-        $peakusage=$matches['peakusage']
-
-        New-Object -TypeName PSObject -Property @{
-            'UserName' = $username;
-            'Path' = $path;
-            'SharePath' = $sharepath;
-            'TemplateName' = $templatename;
-            'Status' = $status;
-            'Used' = $used;
-            'PercentUsed' = $limit;
-            'Available' = $available;
-            'Peak' = $peak;
-        } | Add-Member MemberSet PSStandardMembers $PSStandardMembers -PassThru
+    Begin {
+        # Crack open a CimSession to the Server.
+        $USCCimS = New-CimSession -ComputerName $Server
     }
-#            $ErrorActionPreference = "Continue"
+    Process {
+        If ($ListTemplates) {
+            Get-FsrmQuotaTemplate -CimSession $USCCimS |
+            Select-Object @{label='TemplateName';expression={$_.Name}},
+                        @{label='Limit';expression={(Get-HRLimit $_.Size)}},
+                        @{label='Type';expression={If($_.SoftLimit){'Soft'}else{'Hard'}}}
+        } Else {
+            
+            $defaultProperties = @('UserName','Available', 'Used')
+            $defaultDisplayPropertySet = New-Object System.Management.Automation.PSPropertySet('DefaultDisplayPropertySet',[string[]]$defaultProperties)
+            $PSStandardMembers = [System.Management.Automation.PSMemberInfo[]]@($defaultDisplayPropertySet)
+            If ( $UserName -ne $null ) {
+                If (!(Get-Module -Name ActiveDirectory)) {
+                    If (!(Get-Module -ListAvailable -Name ActiveDirectory)) { Write-Host -ForegroundColor Red "RSA Tools not available"; return } Else {
+                        Import-Module -Name ActiveDirectory
+                    }
+                }
+                Try {
+                    $User = Get-ADUser -Identity $UserName
+                } Catch { 
+                    Write-Host -ForegroundColor Red "$Username not found"; return 
+                }
+                If ( $User.DistinguishedName -match "Staff" ) {
+                    $QuotaPath = "J:\staffhome\$($User.SamAccountName)"
+                } ElseIf ( $User.DistinguishedName -match "Student" ) {
+                    $QuotaPath = "F:\studenthome\$($User.SamAccountName)"
+                } Else { Write-Host -ForegroundColor Red "$Username folder not found"; return }
+            }
+
+            If ($Scan) {
+                Write-Verbose "Scanning quota to update statistics" -Verbose
+                Update-FsrmQuota -CimSession $USCCimS $QuotaPath | Out-Null
+                Start-Sleep -Seconds 10
+            }
+            If ($TemplateName) {
+                Get-FsrmQuota -CimSession $USCCimS | Where-Object {
+                    $_.Template -eq $TemplateName -And
+                    $_.MatchesTemplate}
+            } else {
+                Get-FsrmQuota -CimSession $USCCimS -Path $QuotaPath |
+                Select-Object @{label='UserName';expression={$_.Path.split('\')[-1]}},
+                            Path,@{label='TemplateName';expression={$_.Template}},
+                            @{label='Status';expression={If($_.Disabled){'Disabled'}else{'Enabled'}}},
+                            @{label='Used';expression={Get-HRLimit -Size $_.Usage}},
+                            @{label='PercentUsed';expression={"{0:0}%" -f ($_.Usage/$_.Size*100) }},
+                            @{label='Available';expression={Get-HRLimit -Size ($_.Size - $_.Usage)}},
+                            @{label='Peak';expression={Get-HRLimit -Size $_.PeakUsage}}
+            }
+        }
+    }
+    End {
+        Remove-CimSession $USCCimS
+    }
 }
 
 function Set-USCQuota {
 <#
     .SYNOPSIS
-    Sets a quota template on a path using dirqutoa.exe with an FSRM Windows server.
+    Sets a quota template on a path using the FileServerResourceManager PowerShell module on an FSRM Windows server.
     
     .DESCRIPTION
     Uses dirquota.exe and output from Get-USCQuota to modify a path quota to match that of a quota Template.
@@ -196,58 +201,44 @@ function Set-USCQuota {
     ChangeLog:
     1.0 - First Release
 #>
+    [CmdletBinding(SupportsShouldProcess)]
     Param([Parameter(Mandatory = $true,
                      ValueFromPipeLine = $true,
                      ValueFromPipeLineByPropertyName = $false)]$Path,$TemplateName="2.5GB Hard Limit",$server="wsp-file-vs48")
 	BEGIN {
-        If (! (Test-CurrentAdminRights) ) { Write-Host -ForegroundColor Red "Please run as Admin"; return }
+        $USCCimS = New-CimSession -ComputerName $Server
     }
 
     PROCESS {
 
-    function Set-USCQuotaWorker {
-        Param($Path,$TemplateName)    
-            $QuotaCMD = dirquota q m /remote:$($Server) /Path:$Path /sourcetemplate:$TemplateName
-            If ( $QuotaCMD -match "successfully" ) { Write-Host "Quota path $Path modified to $TemplateName successfully" }
-            Else { Write-Host $QuotaCMD }
-        }
-    
-    #Verify Template
-    $Templates = Get-USCQuota -ListTemplates
-    If ( ! ($Templates | Where-Object { $_.TemplateName -eq $TemplateName }) ) { 
-        Write-Host "No such template exists"
-        $Templates
-        return
-    }
-    If ( $PSBoundParameters.ContainsKey('Path') ) {
-
-        $Path | ForEach-Object {
-            If ($_ | Get-Member -Name Path) {
-                Set-USCQuotaWorker -Path $_.Path -TemplateName $TemplateName
-            } Else {
-                Set-USCQuotaWorker -Path $_ -TemplateName $TemplateName
+        function Set-USCQuotaWorker {
+            [CmdLetBinding(SupportsShouldProcess)]
+            Param($Path,$TemplateName)    
+                Reset-FsrmQuota -CimSession $USCCimS -Path $Path -Template $TemplateName
+                Write-Verbose "Quota path $Path modified to $TemplateName successfully"
             }
-        } 
-	} Else {
+        
+        #Verify Template
+        $Templates = Get-USCQuota -ListTemplates
+        If ( ! ($Templates | Where-Object { $_.TemplateName -eq $TemplateName }) ) { 
+            Write-Host "No such template exists"
+            $Templates
+            return
+        }
+        If ( $PSBoundParameters.ContainsKey('Path') ) {
 
-	Set-USCQuotaWorker -UserName $UserName -TemplateName $TemplateName
+            $Path | ForEach-Object {
+                If ($_ | Get-Member -Name Path) {
+                    Set-USCQuotaWorker -Path $_.Path -TemplateName $TemplateName
+                } Else {
+                    Set-USCQuotaWorker -Path $_ -TemplateName $TemplateName
+                }
+            } 
+        } Else {
+            Set-USCQuotaWorker -UserName $UserName -TemplateName $TemplateName
+        }
     }
+    End{
+        Remove-CimSession $USCCimS
     }
-}
-
-function Test-CurrentAdminRights {
-    #Return $True if process has admin rights, otherwise $False
-    $user = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    $Role = [System.Security.Principal.WindowsBuiltinRole]::Administrator
-    return (New-Object Security.Principal.WindowsPrincipal $User).IsInRole($Role)
- }
-
-function Invoke-AsAdmin() {
-    Param([System.String]$ArgumentString = "")
-    $NewProcessInfo = new-object "Diagnostics.ProcessStartInfo"
-    $NewProcessInfo.FileName = [System.Diagnostics.Process]::GetCurrentProcess().path
-    $NewProcessInfo.Arguments = "-file " + $MyInvocation.MyCommand.Definition + " $ArgumentString"
-    $NewProcessInfo.Verb = "runas"
-    $NewProcess = [Diagnostics.Process]::Start($NewProcessInfo)
-    $NewProcess.WaitForExit()
 }
