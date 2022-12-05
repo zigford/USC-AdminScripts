@@ -75,7 +75,7 @@
     1.3.1 - [18/04/2017 DR] Changed regexes to match sizes with commas and/or ending with KB or bytes
     1.3.2 - [10/05/2017 JH] Added new parameter -Scan to update statistics prior to retreival
 #>
-	Param($UserName,[string[]]$TemplateName,$Server="wsp-file02",[Switch]$ListTemplates,[switch]$Scan)
+	Param($UserName,[string[]]$TemplateName,$Server="wsp-file-vs48",[Switch]$ListTemplates,[switch]$Scan)
 	If (! (Test-CurrentAdminRights) ) { Write-Host -ForegroundColor Red "Please run as Admin"; return }
     If ($ListTemplates) {
     	$QuotaCMD = dirquota t l /remote:$($Server)
@@ -103,9 +103,9 @@
                 Write-Host -ForegroundColor Red "$Username not found"; return 
             }
             If ( $User.DistinguishedName -match "Staff" ) {
-                $QuotaPath = "/path:j:\staffhome\$($User.SamAccountName)"
+                $QuotaPath = "/path:J:\staffhome\$($User.SamAccountName)"
             } ElseIf ( $User.DistinguishedName -match "Student" ) {
-                $QuotaPath = "/path:f:\studenthome\$($User.SamAccountName)"
+                $QuotaPath = "/path:F:\studenthome\$($User.SamAccountName)"
             } Else { Write-Host -ForegroundColor Red "$Username folder not found"; return }
         }
 
@@ -116,7 +116,7 @@
             Start-Sleep -Seconds 10
         }
         $dirquota=dirquota.exe q l /remote:$($Server) $SourceTemplate $QuotaPath | Select-String -Pattern "Quota Path" -Context 0,12
-write-host $dirquota
+
         $dirquota -match '(Quota Path:\s*(.*\\)*)(?<username>[^\\^\r\n]*)[\r\n]+' | out-null
         $username=$matches['username']
         $dirquota -match '(Quota Path:\s*)(?<path>[^\s\r\n]+)[\r\n]+' | out-null
@@ -128,10 +128,7 @@ write-host $dirquota
         $dirquota -match '(Limit:\s*)(?<limit>[0-9,.]* (MB)|(GB|KB|bytes)).*[\r\n]+' | out-null
         $limit=$matches['limit']
         $dirquota -match '(Source Template:\s*)(?<templatename>[^\(\r\n]*).*[\r\n]+' | out-null
-write-host "OK so I got here 1"
         $templatename=($matches['templatename']).trim()
-write-host $templatename
-write-host "OK so I got here 2"
         $dirquota -match '(Used:\s*)(?<used>[0-9,.]* (MB|GB|KB|bytes)) \((?<percentused>[0-9.]*\%)\)[\r\n]+' | out-null
         $used=$matches['used']
         $percentused=$matches['percentused']
@@ -201,7 +198,7 @@ function Set-USCQuota {
 #>
     Param([Parameter(Mandatory = $true,
                      ValueFromPipeLine = $true,
-                     ValueFromPipeLineByPropertyName = $false)]$Path,$TemplateName="2.5GB Hard Limit",$server="wsp-file02")
+                     ValueFromPipeLineByPropertyName = $false)]$Path,$TemplateName="2.5GB Hard Limit",$server="wsp-file-vs48")
 	BEGIN {
         If (! (Test-CurrentAdminRights) ) { Write-Host -ForegroundColor Red "Please run as Admin"; return }
     }
