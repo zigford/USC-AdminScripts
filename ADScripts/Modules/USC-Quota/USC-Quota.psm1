@@ -71,8 +71,11 @@
     1.0 - First Release
     1.1 - Changed to use the new [pscustomobject]
     1.2 - Changed to reduce lag and show data immediately
+    1.3 - [14/11/16 Darryl Rees] Changed to make work with win10 dirquota (parse with regex)
+    1.3.1 - [18/04/2017 DR] Changed regexes to match sizes with commas and/or ending with KB or bytes
+    1.3.2 - [10/05/2017 JH] Added new parameter -Scan to update statistics prior to retreival
 #>
-	Param($UserName,[string[]]$TemplateName,$Server="wsp-file02",[Switch]$ListTemplates)
+	Param($UserName,[string[]]$TemplateName,$Server="wsp-file02",[Switch]$ListTemplates,[switch]$Scan)
 	If (! (Test-CurrentAdminRights) ) { Write-Host -ForegroundColor Red "Please run as Admin"; return }
     If ($ListTemplates) {
     	$QuotaCMD = dirquota t l /remote:$($Server)
@@ -105,26 +108,51 @@
                 $QuotaPath = "/path:f:\studenthome\$($User.SamAccountName)"
             } Else { Write-Host -ForegroundColor Red "$Username folder not found"; return }
         }
-        
-        $ErrorActionPreference = "SilentlyContinue"
-        dirquota.exe q l /remote:$($Server) $SourceTemplate $QuotaPath | Select-String -Pattern "Quota Path" -Context 0,12 |
-            %{
-                $Line = 0
-                While ( ($_.Context.PostContext[$Line] -match "\\") ) { $Line++ }
-                New-Object -TypeName PSObject -Property @{
-                    'UserName' = $_.Line.Split("\") | Select-Object -Last 1;
-                    'Path' = $_.Line.Split(":",2)[1].TrimStart(" ");
-                    'SharePath' = $_.Context.PostContext[0].Split(":")[1].TrimStart(" ");
-                    'TemplateName' = $_.Context.PostContext[$Line].Split(":")[1].TrimStart(" ");
-                    'Status' = $_.Context.PostContext[$Line+1].Split(":")[1].TrimStart(" ");
-                    'Used' = $_.Context.PostContext[$Line+3].Split(":")[1].TrimStart(" ").Split("(")[0];
-                    'PercentUsed' = [int]$_.Context.PostContext[$Line+3].Split("(")[1].Split("%")[0];
-                    'Available' = $_.Context.PostContext[$Line+4].Split(":")[1].TrimStart(" ");
-                    'Peak' = $_.Context.PostContext[$Line+5].Split(":")[1].TrimStart(" ").Split("(")[0];
-                } | Add-Member MemberSet PSStandardMembers $PSStandardMembers -PassThru
-            }
+
+#        $ErrorActionPreference = "SilentlyContinue"
+        If ($Scan) {
+            Write-Verbose "Scanning quota to update statistics" -Verbose
+            dirquota.exe q s /remote:$($Server) $QuotaPath | Out-Null
+            Start-Sleep -Seconds 10
+        }
+        $dirquota=dirquota.exe q l /remote:$($Server) $SourceTemplate $QuotaPath | Select-String -Pattern "Quota Path" -Context 0,12
+write-host $dirquota
+        $dirquota -match '(Quota Path:\s*(.*\\)*)(?<username>[^\\^\r\n]*)[\r\n]+' | out-null
+        $username=$matches['username']
+        $dirquota -match '(Quota Path:\s*)(?<path>[^\s\r\n]+)[\r\n]+' | out-null
+        $path=$matches['path']
+        $dirquota -match '(Share Path:\s*)(?<sharepath>[^\s\r\n]+)[\r\n]+' | out-null
+        $sharepath=$matches['sharepath']
+        $dirquota -match '(Quota Status:\s*)(?<status>[^\s\r\n]+)[\r\n]+' | out-null
+        $status=$matches['status']
+        $dirquota -match '(Limit:\s*)(?<limit>[0-9,.]* (MB)|(GB|KB|bytes)).*[\r\n]+' | out-null
+        $limit=$matches['limit']
+        $dirquota -match '(Source Template:\s*)(?<templatename>[^\(\r\n]*).*[\r\n]+' | out-null
+write-host "OK so I got here 1"
+        $templatename=($matches['templatename']).trim()
+write-host $templatename
+write-host "OK so I got here 2"
+        $dirquota -match '(Used:\s*)(?<used>[0-9,.]* (MB|GB|KB|bytes)) \((?<percentused>[0-9.]*\%)\)[\r\n]+' | out-null
+        $used=$matches['used']
+        $percentused=$matches['percentused']
+        $dirquota -match '(Available:\s*)(?<available>[0-9,.]* (MB|GB|KB|bytes)).*[\r\n]+' | out-null
+        $available=$matches['available']
+        $dirquota -match '(Peak Usage:\s*)(?<peakusage>[0-9,.]* (MB|GB|KB|bytes)).*[\r\n]+' | out-null
+        $peakusage=$matches['peakusage']
+
+        New-Object -TypeName PSObject -Property @{
+            'UserName' = $username;
+            'Path' = $path;
+            'SharePath' = $sharepath;
+            'TemplateName' = $templatename;
+            'Status' = $status;
+            'Used' = $used;
+            'PercentUsed' = $limit;
+            'Available' = $available;
+            'Peak' = $peak;
+        } | Add-Member MemberSet PSStandardMembers $PSStandardMembers -PassThru
     }
-            $ErrorActionPreference = "Continue"
+#            $ErrorActionPreference = "Continue"
 }
 
 function Set-USCQuota {
