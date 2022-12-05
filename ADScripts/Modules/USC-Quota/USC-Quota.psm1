@@ -1,4 +1,35 @@
-﻿function Get-HRLimit {
+﻿function Test-FSRMAccess {
+    [CmdLetBinding()]
+
+    # Check running with admin account
+    $ADUserCheckParams = @{
+        Filter = {name -eq ${env:username}}
+        Server = 'usc.internal'
+        SearchBase = "OU=Privileged Users and Groups,OU=Utility,DC=usc,DC=internal"
+    }
+    If (-not (Get-ADUser @ADUserCheckParams)) {
+        Write-Error ("Run with admin account (usc\${env:username}1i)") -ErrorAction Stop
+    }
+
+    # Check module is available and attempt to repair
+    $PS = If ($IsCoreCLR) {'PowerShell'}Else{'WindowsPowerShell'}
+    $LocalModulePath = "${env:userprofile}\Documents\$PS\Modules"
+    $RemoteModulePath = "\\usc.internal\usc\appdev\General\SCCMTools\Scripts\Modules\FileServerResourceManager"
+    # Make sure the module is installed/can be loaded.
+    If (-Not (Get-Module -ListAvailable FileServerResourceManager -EA SilentlyContinue)) {
+        If (-Not (Test-Path -Path $LocalModulePath)) {
+            New-Item -ItemType Directory -Path $LocalModulePath
+        }
+        Copy-Item -Recurse -Path $RemoteModulePath -Destination $LocalModulePath
+    }
+    If ($IsCoreCLR) {
+        Import-Module FileServerResourceManager -SkipEditionCheck
+    } Else {
+        Import-Module FileServerResourceManager
+    }
+}
+
+function Get-HRLimit {
     # convert bytes into human readable number
     Param($Size)
     If ($Size -gt 1099511627776) {
@@ -101,6 +132,7 @@ function Get-USCQuota {
     Begin {
         # Crack open a CimSession to the Server.
         $USCCimS = New-CimSession -ComputerName $Server
+        Test-FSRMAccess
     }
     Process {
         If ($ListTemplates) {
@@ -207,6 +239,7 @@ function Set-USCQuota {
                      ValueFromPipeLineByPropertyName = $false)]$Path,$TemplateName="2.5GB Hard Limit",$server="wsp-file-vs48")
 	BEGIN {
         $USCCimS = New-CimSession -ComputerName $Server
+        Test-FSRMAccess
     }
 
     PROCESS {
